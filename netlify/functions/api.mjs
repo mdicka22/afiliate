@@ -44,7 +44,7 @@ class HttpError extends Error { constructor(status, message) { super(message); t
 const fail = (status, message) => { throw new HttpError(status, message); };
 const cookieValue = (request, key) => (request.headers.get('cookie') || '').split(';').map(x => x.trim()).find(x => x.startsWith(`${key}=`))?.slice(key.length + 1);
 const sessionCookie = (token, secure, maxAge = 2592000) => `affilink_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
-const userView = row => ({ id:row.id, username:row.username, slug:row.slug, displayName:row.display_name, bio:row.bio, avatarUrl:row.avatar_url });
+const userView = row => ({ id:row.id, username:row.username, slug:row.slug, displayName:row.display_name, bio:row.bio, avatarUrl:row.avatar_url, theme:row.theme || 'editorial' });
 const productView = row => ({ id:row.id, title:row.title, description:row.description, category:row.category, subcategory:row.subcategory, tags:row.tags, affiliateUrl:row.affiliate_url, imageUrl:row.image_url, featuredRank:row.featured_rank, createdAt:row.created_at, clicks:row.clicks, copies:row.copies, shares:row.shares, collectionIds:row.collection_ids });
 const collectionView = row => ({ id:row.id, name:row.name, description:row.description, createdAt:row.created_at });
 const readBody = async request => {
@@ -68,7 +68,7 @@ export function createHandler({ pool, uploadImage = uploadToSupabase }) {
   const one = async (sql, args = []) => (await rows(sql, args))[0] || null;
   const currentUser = async request => {
     const token = cookieValue(request, 'affilink_session');
-    return token ? one(`SELECT u.id,u.username,u.slug,u.display_name,u.bio,u.avatar_url FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>$2`, [digest(token), Date.now()]) : null;
+    return token ? one(`SELECT u.id,u.username,u.slug,u.display_name,u.bio,u.avatar_url,u.theme FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>$2`, [digest(token), Date.now()]) : null;
   };
   const requireUser = async request => await currentUser(request) || fail(401, 'Silakan masuk terlebih dahulu.');
   const makeSession = async (userId, secure) => {
@@ -159,7 +159,7 @@ export function createHandler({ pool, uploadImage = uploadToSupabase }) {
       }
       const publicMatch = route.match(/^\/api\/public\/([a-z0-9-]+)$/);
       if (publicMatch && method === 'GET') {
-        const user = await one('SELECT id,username,slug,display_name,bio,avatar_url FROM users WHERE slug=$1',[publicMatch[1]]);
+        const user = await one('SELECT id,username,slug,display_name,bio,avatar_url,theme FROM users WHERE slug=$1',[publicMatch[1]]);
         if (!user) fail(404,'Halaman tidak ditemukan.');
         if (rate(request,`visit:${user.id}`,1,30000)) await addEvent(user.id,null,'visit');
         return json({ user:userView(user), products:await productsFor(user.id), collections:await collectionsFor(user.id) });
@@ -178,12 +178,13 @@ export function createHandler({ pool, uploadImage = uploadToSupabase }) {
         return json({ user:userView(user), products:await productsFor(user.id), collections:await collectionsFor(user.id), stats:{ ...totals,daily } });
       }
       if (route === '/api/profile' && method === 'PUT') {
-        const body = await readBody(request), slug = clean(body.slug,32).toLowerCase(), displayName = clean(body.displayName,60), bio = clean(body.bio,280), avatarUrl = clean(body.avatarUrl,2048);
+        const body = await readBody(request), slug = clean(body.slug,32).toLowerCase(), displayName = clean(body.displayName,60), bio = clean(body.bio,280), avatarUrl = clean(body.avatarUrl,2048), theme = clean(body.theme || 'editorial',20);
         if (!validSlug(slug)) fail(400,'Format link tidak valid.');
         if (!displayName) fail(400,'Nama tampilan wajib diisi.');
+        if (!['editorial','blush','studio'].includes(theme)) fail(400,'Tema halaman tidak valid.');
         if (avatarUrl && !validUrl(avatarUrl) && !avatarUrl.startsWith('/uploads/')) fail(400,'URL foto tidak valid.');
         if (await one('SELECT id FROM users WHERE slug=$1 AND id<>$2',[slug,user.id])) fail(409,'Link tidak tersedia.');
-        const updated = await one('UPDATE users SET slug=$1,display_name=$2,bio=$3,avatar_url=$4 WHERE id=$5 RETURNING id,username,slug,display_name,bio,avatar_url',[slug,displayName,bio,avatarUrl,user.id]);
+        const updated = await one('UPDATE users SET slug=$1,display_name=$2,bio=$3,avatar_url=$4,theme=$5 WHERE id=$6 RETURNING id,username,slug,display_name,bio,avatar_url,theme',[slug,displayName,bio,avatarUrl,theme,user.id]);
         return json({ user:userView(updated) });
       }
       if (route === '/api/upload' && method === 'POST') {
@@ -238,4 +239,10 @@ export function createHandler({ pool, uploadImage = uploadToSupabase }) {
   };
 }
 
-export default async function handler(request) { return createHandler({ pool:getPool() })(request); }
+let themeMigration;
+export default async function handler(request) {
+  const pool = getPool();
+  themeMigration ||= pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme VARCHAR(20) NOT NULL DEFAULT 'editorial'").catch(error => { themeMigration = null; throw error; });
+  await themeMigration;
+  return createHandler({ pool })(request);
+}

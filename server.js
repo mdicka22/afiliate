@@ -16,7 +16,7 @@ db.exec(`
 CREATE TABLE IF NOT EXISTS users (
  id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
  slug TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, bio TEXT NOT NULL DEFAULT '',
- avatar_url TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ avatar_url TEXT NOT NULL DEFAULT '', theme TEXT NOT NULL DEFAULT 'editorial', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS sessions (
  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_user_date ON events(user_id, created_at);
 CREATE INDEX IF NOT EXISTS events_product_type ON events(product_id, type);
 `);
+if (!db.prepare("PRAGMA table_info(users)").all().some(column => column.name === 'theme')) db.exec("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'editorial'");
 const categories = JSON.parse(fs.readFileSync(path.join(root, 'categories.json'), 'utf8'));
 const sessions = new Map();
 const json = (res, status, value) => {
@@ -63,7 +64,7 @@ const cookie = req => Object.fromEntries((req.headers.cookie || '').split(';').m
 const currentUser = req => {
   const token = cookie(req).affilink_session;
   if (!token) return null;
-  const row = db.prepare('SELECT users.id, username, slug, display_name, bio, avatar_url FROM sessions JOIN users ON users.id = sessions.user_id WHERE token_hash = ? AND expires_at > ?').get(hash(token), Date.now());
+  const row = db.prepare('SELECT users.id, username, slug, display_name, bio, avatar_url, theme FROM sessions JOIN users ON users.id = sessions.user_id WHERE token_hash = ? AND expires_at > ?').get(hash(token), Date.now());
   return row || null;
 };
 const requireUser = (req, res) => { const user = currentUser(req); if (!user) error(res, 401, 'Silakan masuk terlebih dahulu.'); return user; };
@@ -77,7 +78,7 @@ const readBody = async req => {
   for await (const chunk of req) { bytes += chunk.length; if (bytes > 4 * 1024 * 1024) throw new Error('Data terlalu besar.'); chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { throw new Error('Format data tidak valid.'); }
 };
-const publicUser = row => ({ id: row.id, username: row.username, slug: row.slug, displayName: row.display_name, bio: row.bio, avatarUrl: row.avatar_url });
+const publicUser = row => ({ id: row.id, username: row.username, slug: row.slug, displayName: row.display_name, bio: row.bio, avatarUrl: row.avatar_url, theme: row.theme || 'editorial' });
 const productRow = row => ({ id: row.id, title: row.title, description: row.description, category: row.category, subcategory: row.subcategory, tags: JSON.parse(row.tags), affiliateUrl: row.affiliate_url, imageUrl: row.image_url, featuredRank: row.featured_rank, createdAt: row.created_at, clicks: row.clicks || 0, copies: row.copies || 0, shares: row.shares || 0, collectionIds: row.collection_ids ? row.collection_ids.split(',').map(Number) : [] });
 const productsFor = userId => db.prepare(`SELECT p.*,
  (SELECT COUNT(*) FROM events e WHERE e.product_id=p.id AND e.type='click') clicks,
@@ -139,7 +140,7 @@ async function api(req, res, url) {
   }
   const pub = route.match(/^\/api\/public\/([a-z0-9-]+)$/);
   if (pub && method === 'GET') {
-    const user = db.prepare('SELECT id,username,slug,display_name,bio,avatar_url FROM users WHERE slug=?').get(pub[1]);
+    const user = db.prepare('SELECT id,username,slug,display_name,bio,avatar_url,theme FROM users WHERE slug=?').get(pub[1]);
     if (!user) return error(res, 404, 'Halaman tidak ditemukan.');
     if (rate(req, `visit:${user.id}`, 1, 30000)) event(user.id, null, 'visit');
     return json(res, 200, { user: publicUser(user), products: productsFor(user.id), collections: collectionsFor(user.id) });
@@ -160,13 +161,14 @@ async function api(req, res, url) {
     return json(res, 200, { user: publicUser(user), products: productsFor(user.id), collections: collectionsFor(user.id), stats: { visits: totals.visits || 0, clicks: totals.clicks || 0, copies: totals.copies || 0, shares: totals.shares || 0, daily } });
   }
   if (route === '/api/profile' && method === 'PUT') {
-    const body = await readBody(req), slug = clean(body.slug, 32).toLowerCase(), displayName = clean(body.displayName, 60), bio = clean(body.bio, 280), avatarUrl = clean(body.avatarUrl, 2048);
+    const body = await readBody(req), slug = clean(body.slug, 32).toLowerCase(), displayName = clean(body.displayName, 60), bio = clean(body.bio, 280), avatarUrl = clean(body.avatarUrl, 2048), theme = clean(body.theme || 'editorial', 20);
     if (!validSlug(slug)) return error(res, 400, 'Format link tidak valid.');
     if (!displayName) return error(res, 400, 'Nama tampilan wajib diisi.');
+    if (!['editorial','blush','studio'].includes(theme)) return error(res, 400, 'Tema halaman tidak valid.');
     if (avatarUrl && !validUrl(avatarUrl) && !avatarUrl.startsWith('/uploads/')) return error(res, 400, 'URL foto tidak valid.');
     const used = db.prepare('SELECT id FROM users WHERE slug=? AND id<>?').get(slug, user.id);
     if (used) return error(res, 409, 'Link tidak tersedia.');
-    db.prepare('UPDATE users SET slug=?,display_name=?,bio=?,avatar_url=? WHERE id=?').run(slug, displayName, bio, avatarUrl, user.id);
+    db.prepare('UPDATE users SET slug=?,display_name=?,bio=?,avatar_url=?,theme=? WHERE id=?').run(slug, displayName, bio, avatarUrl, theme, user.id);
     return json(res, 200, { user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(user.id)) });
   }
   if (route === '/api/upload' && method === 'POST') {
@@ -244,7 +246,7 @@ const server = http.createServer(async (req,res) => {
       if (name !== url.pathname.slice(9) || !/^[a-f0-9-]+\.(png|jpg|webp|gif)$/.test(name)) return error(res,404,'Tidak ditemukan.');
       const ext = path.extname(name).slice(1); return sendFile(res,path.join(uploadDir,name),{jpg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif'}[ext]);
     }
-    const assets = { '/styles.css': 'text/css; charset=utf-8', '/redesign.css': 'text/css; charset=utf-8', '/refresh.css': 'text/css; charset=utf-8', '/app.js': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml' };
+    const assets = { '/styles.css': 'text/css; charset=utf-8', '/redesign.css': 'text/css; charset=utf-8', '/refresh.css': 'text/css; charset=utf-8', '/polish.css': 'text/css; charset=utf-8', '/app.js': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml', '/assets/affalink-3d.png': 'image/png', '/assets/creator-demo.png': 'image/png', '/assets/serum-demo.png': 'image/png' };
     if (assets[url.pathname]) return sendFile(res,path.join(root,'public',url.pathname),assets[url.pathname]);
     if (url.pathname === '/' || url.pathname === '/app' || url.pathname === '/auth' || /^\/[a-z0-9-]+\/?$/.test(url.pathname)) return sendFile(res,path.join(root,'public','index.html'),'text/html; charset=utf-8');
     return error(res,404,'Halaman tidak ditemukan.');

@@ -2,7 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { createHandler } from '../netlify/functions/api.mjs';
+import { createHandler, databasePoolConfig } from '../netlify/functions/api.mjs';
+
+test('Supabase pooler connection always uses TLS and accepts an optional CA', () => {
+  const url = 'postgresql://postgres.project:pass@pooler.example:6543/postgres?sslmode=require';
+  const basic = databasePoolConfig(url);
+  assert.equal(basic.ssl.rejectUnauthorized, false);
+  assert.ok(basic.ssl);
+  assert.ok(!basic.connectionString.includes('sslmode='));
+  const verified = databasePoolConfig(url, '-----BEGIN CERTIFICATE-----\\nTEST\\n-----END CERTIFICATE-----');
+  assert.equal(verified.ssl.rejectUnauthorized, true);
+  assert.match(verified.ssl.ca, /CERTIFICATE-----\nTEST\n/);
+});
 
 test('Netlify API works against Supabase PostgreSQL schema', async () => {
   const db = new PGlite();
@@ -41,6 +52,10 @@ test('Netlify API works against Supabase PostgreSQL schema', async () => {
   assert.equal(stats.data.stats.visits,1);
   assert.equal(stats.data.stats.clicks,1);
   assert.equal(stats.data.stats.copies,1);
+  const themed = await call('/api/profile','PUT',{slug:'dila',displayName:'Pilihan Dila',theme:'studio'},a.cookie);
+  assert.equal(themed.status,200);
+  assert.equal((await call('/api/public/dila')).data.user.theme,'studio');
+  assert.equal((await call('/api/profile','PUT',{slug:'dila',displayName:'Pilihan Dila',theme:'invalid'},a.cookie)).status,400);
   assert.equal((await call('/api/profile','PUT',{slug:'bima',displayName:'Dila'},a.cookie)).status,409);
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==';
   const upload = await call('/api/upload','POST',{data:png},a.cookie);

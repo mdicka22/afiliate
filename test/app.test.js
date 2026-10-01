@@ -41,6 +41,10 @@ test('multi-user auth, unique slugs, catalog, events, and ownership', async t =>
   assert.equal(dashboard.data.stats.copies,1);
   assert.equal(dashboard.data.stats.visits,1);
   assert.equal(dashboard.data.products[0].featuredRank,1);
+  const themed = await call('/api/profile','PUT',{slug:'dila',displayName:'Pilihan Dila',theme:'blush'},first.cookie);
+  assert.equal(themed.status,200);
+  assert.equal((await call('/api/public/dila')).data.user.theme,'blush');
+  assert.equal((await call('/api/profile','PUT',{slug:'dila',displayName:'Pilihan Dila',theme:'invalid'},first.cookie)).status,400);
   assert.equal((await call('/api/profile','PUT',{slug:'bima',displayName:'Dila'},first.cookie)).status,409);
   assert.equal((await call('/api/logout','POST',{},first.cookie)).status,200);
   assert.equal((await call('/api/dashboard','GET',undefined,first.cookie)).status,401);

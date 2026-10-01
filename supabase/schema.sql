@@ -6,6 +6,7 @@ CREATE TABLE users (
   display_name VARCHAR(60) NOT NULL,
   bio VARCHAR(280) NOT NULL DEFAULT '',
   avatar_url TEXT NOT NULL DEFAULT '',
+  theme VARCHAR(20) NOT NULL DEFAULT 'editorial',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
