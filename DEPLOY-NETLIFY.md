@@ -1,4 +1,4 @@
-# Deploy Affilink dengan Supabase + Netlify
+# Deploy Affalink dengan Supabase + Netlify
 
 GitHub menyimpan source, Netlify menjalankan halaman dan API, Supabase menyimpan akun, produk, statistik, serta gambar. GitHub Pages sendiri tidak dapat menjalankan API login dan database.
 
@@ -22,12 +22,14 @@ GitHub menyimpan source, Netlify menjalankan halaman dan API, Supabase menyimpan
    | `SUPABASE_SECRET_KEY` | Secret key (`sb_secret_...`), hanya di server |
    | `AWS_LAMBDA_JS_RUNTIME` | `nodejs24.x` |
 
+   Untuk verifikasi identitas server database, Anda juga dapat menambahkan `SUPABASE_DB_CA` berisi sertifikat CA dari **Supabase → Database Settings → SSL Configuration → Download Certificate**. Isi dapat berupa PEM dengan baris baru asli atau `\n` literal. Tanpa variabel ini koneksi tetap memakai TLS terenkripsi, tetapi sertifikat server tidak diverifikasi. Jangan menonaktifkan TLS atau mengatur `NODE_TLS_REJECT_UNAUTHORIZED` secara global.
+
 4. Deploy ulang setelah environment tersimpan. Uji daftar akun, slug unik, login, unggah gambar, produk, halaman publik, dan statistik. Atur domain sendiri di Netlify jika diperlukan.
 
 `SUPABASE_SECRET_KEY` memberi hak istimewa. Jangan memasukkannya ke file source, variabel publik, atau browser. Jika gagal koneksi database, periksa password connection string dan pengaturan SSL. Jika unggah gagal, periksa nama bucket, status Public, Project URL, dan secret key.
 
 ## Berkas ZIP
 
-`Affilink-Netlify-source.zip` berisi source yang dapat diekstrak lalu diunggah ke GitHub. ZIP ini bukan pengganti konfigurasi Supabase dan environment variables. Drag-and-drop folder `public/` saja tidak akan menjalankan API.
+`Affalink-Netlify-source.zip` berisi source yang dapat diekstrak lalu diunggah ke GitHub. ZIP ini bukan pengganti konfigurasi Supabase dan environment variables. Drag-and-drop folder `public/` saja tidak akan menjalankan API.
 
-SQLite lokal di `data/affilink.sqlite` hanya untuk pratinjau `npm start`. Data lokal tidak otomatis berpindah ke Supabase. Alamat `affilink.web` di contoh memerlukan domain yang dimiliki dan diarahkan ke Netlify; alamat bawaan Netlify juga dapat dipakai.
+SQLite lokal di `data/affilink.sqlite` hanya untuk pratinjau `npm start`. Data lokal tidak otomatis berpindah ke Supabase. Alamat `affalink.web` di contoh memerlukan domain yang dimiliki dan diarahkan ke Netlify; alamat bawaan Netlify juga dapat dipakai.
