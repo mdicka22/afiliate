@@ -1,0 +1,21 @@
+{
+  "name": "affilink",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mobile-first multi-user affiliate link hub",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "build": "node --check netlify/functions/api.mjs",
+    "test": "node --test --test-isolation=none"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17"
+  }
+}

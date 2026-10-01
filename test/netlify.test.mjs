@@ -1,0 +1,53 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { PGlite } from '@electric-sql/pglite';
+import { createHandler } from '../netlify/functions/api.mjs';
+
+test('Netlify API works against Supabase PostgreSQL schema', async () => {
+  const db = new PGlite();
+  await db.exec(fs.readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
+  const query = async (...args) => {
+    const result = await db.query(...args);
+    return { rows:result.rows, rowCount:result.affectedRows ?? result.rows.length };
+  };
+  const pool = { query, connect:async () => ({ query, release() {} }) };
+  const savedImages = new Map();
+  const handler = createHandler({ pool, uploadImage:async (key,value) => { savedImages.set(key,value); return `https://supabase.example/storage/v1/object/public/product-images/${key}`; } });
+  const call = async (route, method = 'GET', body, cookie = '') => {
+    const request = new Request(`https://affilink.example${route}`, {method,headers:{'Content-Type':'application/json',...(cookie ? {Cookie:cookie} : {})},body:body === undefined ? undefined : JSON.stringify(body)});
+    const response = await handler(request);
+    return {status:response.status,cookie:response.headers.get('set-cookie')?.split(';')[0],data:await response.json()};
+  };
+  const a = await call('/api/register','POST',{username:'dila',slug:'dila',displayName:'Pilihan Dila',password:'password123'});
+  assert.equal(a.status,201);
+  assert.ok(a.cookie);
+  assert.equal((await call('/api/slug-check?slug=dila')).data.available,false);
+  assert.equal((await call('/api/register','POST',{username:'lain',slug:'dila',displayName:'Lain',password:'password123'})).status,409);
+  const b = await call('/api/register','POST',{username:'bima',slug:'bima',displayName:'Pilihan Bima',password:'password123'});
+  assert.equal(b.status,201);
+  const col = await call('/api/collections','POST',{name:'Daily',description:'Pilihan harian'},a.cookie);
+  assert.equal(col.status,201);
+  const product = await call('/api/products','POST',{title:'Serum pagi',description:'Ringan',category:'Beauty & Personal Care',subcategory:'Skincare',tags:['skincare','favorit'],affiliateUrl:'https://example.com/serum',imageUrl:'',featuredRank:1,collectionIds:[col.data.id]},a.cookie);
+  assert.equal(product.status,201);
+  assert.equal((await call(`/api/products/${product.data.id}`,'PUT',{title:'Curian',category:'Beauty & Personal Care',subcategory:'Skincare',affiliateUrl:'https://example.com'},b.cookie)).status,404);
+  const page = await call('/api/public/dila');
+  assert.equal(page.data.products[0].title,'Serum pagi');
+  assert.deepEqual(page.data.products[0].tags,['skincare','favorit']);
+  assert.deepEqual(page.data.products[0].collectionIds,[col.data.id]);
+  assert.equal((await call(`/api/public/dila/products/${product.data.id}/click`,'POST')).status,200);
+  assert.equal((await call(`/api/public/dila/products/${product.data.id}/copy`,'POST')).status,200);
+  const stats = await call('/api/dashboard','GET',undefined,a.cookie);
+  assert.equal(stats.data.stats.visits,1);
+  assert.equal(stats.data.stats.clicks,1);
+  assert.equal(stats.data.stats.copies,1);
+  assert.equal((await call('/api/profile','PUT',{slug:'bima',displayName:'Dila'},a.cookie)).status,409);
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==';
+  const upload = await call('/api/upload','POST',{data:png},a.cookie);
+  assert.equal(upload.status,201);
+  assert.match(upload.data.url,/^https:\/\/supabase\.example\/storage\/v1\/object\/public\/product-images\//);
+  assert.ok(savedImages.has(upload.data.url.split('/').pop()));
+  assert.equal((await call('/api/logout','POST',{},a.cookie)).status,200);
+  assert.equal((await call('/api/dashboard','GET',undefined,a.cookie)).status,401);
+  await db.close();
+});

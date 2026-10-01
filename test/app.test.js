@@ -1,0 +1,47 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'affilink-test-'));
+process.env.AFFILINK_DATA_DIR = dataDir;
+process.env.AFFILINK_UPLOAD_DIR = path.join(dataDir, 'uploads');
+const server = require('../server');
+
+test('multi-user auth, unique slugs, catalog, events, and ownership', async t => {
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (route, method = 'GET', body, cookie = '') => {
+    const response = await fetch(base + route, { method, headers: { 'Content-Type':'application/json', ...(cookie ? {Cookie:cookie} : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return { status:response.status, cookie:response.headers.get('set-cookie')?.split(';')[0], data:await response.json() };
+  };
+  const first = await call('/api/register','POST',{username:'dila',slug:'dila',displayName:'Pilihan Dila',password:'password123'});
+  assert.equal(first.status,201);
+  assert.ok(first.cookie);
+  assert.equal((await call('/api/slug-check?slug=dila')).data.available,false);
+  const duplicate = await call('/api/register','POST',{username:'another',slug:'dila',displayName:'Another',password:'password123'});
+  assert.equal(duplicate.status,409);
+  const second = await call('/api/register','POST',{username:'bima',slug:'bima',displayName:'Pilihan Bima',password:'password123'});
+  assert.equal(second.status,201);
+  const collection = await call('/api/collections','POST',{name:'Favorit harian',description:'Sering dipakai'},first.cookie);
+  assert.equal(collection.status,201);
+  const product = await call('/api/products','POST',{title:'Serum pagi',description:'Ringan untuk pagi',category:'Beauty & Personal Care',subcategory:'Skincare',tags:['serum','skincare'],affiliateUrl:'https://example.com/serum',imageUrl:'',featuredRank:1,collectionIds:[collection.data.id]},first.cookie);
+  assert.equal(product.status,201);
+  assert.equal((await call(`/api/products/${product.data.id}`,'PUT',{title:'Curian',category:'Beauty & Personal Care',subcategory:'Skincare',affiliateUrl:'https://example.com'},second.cookie)).status,404);
+  const page = await call('/api/public/dila');
+  assert.equal(page.status,200);
+  assert.equal(page.data.products[0].title,'Serum pagi');
+  assert.deepEqual(page.data.products[0].tags,['serum','skincare']);
+  assert.deepEqual(page.data.products[0].collectionIds,[collection.data.id]);
+  assert.equal((await call(`/api/public/dila/products/${product.data.id}/click`,'POST')).status,200);
+  assert.equal((await call(`/api/public/dila/products/${product.data.id}/copy`,'POST')).status,200);
+  const dashboard = await call('/api/dashboard','GET',undefined,first.cookie);
+  assert.equal(dashboard.data.stats.clicks,1);
+  assert.equal(dashboard.data.stats.copies,1);
+  assert.equal(dashboard.data.stats.visits,1);
+  assert.equal(dashboard.data.products[0].featuredRank,1);
+  assert.equal((await call('/api/profile','PUT',{slug:'bima',displayName:'Dila'},first.cookie)).status,409);
+  assert.equal((await call('/api/logout','POST',{},first.cookie)).status,200);
+  assert.equal((await call('/api/dashboard','GET',undefined,first.cookie)).status,401);
+});
