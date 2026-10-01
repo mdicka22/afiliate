@@ -244,7 +244,7 @@ const server = http.createServer(async (req,res) => {
       if (name !== url.pathname.slice(9) || !/^[a-f0-9-]+\.(png|jpg|webp|gif)$/.test(name)) return error(res,404,'Tidak ditemukan.');
       const ext = path.extname(name).slice(1); return sendFile(res,path.join(uploadDir,name),{jpg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif'}[ext]);
     }
-    const assets = { '/styles.css': 'text/css; charset=utf-8', '/redesign.css': 'text/css; charset=utf-8', '/app.js': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml' };
+    const assets = { '/styles.css': 'text/css; charset=utf-8', '/redesign.css': 'text/css; charset=utf-8', '/refresh.css': 'text/css; charset=utf-8', '/app.js': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml' };
     if (assets[url.pathname]) return sendFile(res,path.join(root,'public',url.pathname),assets[url.pathname]);
     if (url.pathname === '/' || url.pathname === '/app' || url.pathname === '/auth' || /^\/[a-z0-9-]+\/?$/.test(url.pathname)) return sendFile(res,path.join(root,'public','index.html'),'text/html; charset=utf-8');
     return error(res,404,'Halaman tidak ditemukan.');
