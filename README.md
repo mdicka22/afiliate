@@ -1,4 +1,4 @@
-# Affilink
+# Affalink
 
 Aplikasi mobile-first untuk menyimpan, mengatur, dan membagikan link affiliate melalui halaman publik milik setiap pengguna.
 
@@ -33,4 +33,4 @@ Pratinjau lokal memakai SQLite di `data/affilink.sqlite` dan menyimpan gambar di
 
 Versi deploy memakai PostgreSQL Supabase untuk data, Supabase Storage untuk gambar, dan Netlify Functions untuk API. Ikuti [DEPLOY-NETLIFY.md](DEPLOY-NETLIFY.md). Database online baru dimulai kosong; data SQLite lokal tidak ikut terunggah.
 
-Alamat `affilink.web` dalam PRD adalah contoh. Domain sebenarnya perlu dimiliki dan diarahkan ke hosting sebelum halaman publik dapat diakses dari internet.
+Alamat `affalink.web` dalam PRD adalah contoh. Domain sebenarnya perlu dimiliki dan diarahkan ke hosting sebelum halaman publik dapat diakses dari internet.
