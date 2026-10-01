@@ -4,18 +4,16 @@
   "private": true,
   "description": "Mobile-first multi-user affiliate link hub",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "build": "node --check netlify/functions/api.mjs",
+    "start": "node --env-file-if-exists=.env local-server.mjs",
+    "dev": "node --env-file-if-exists=.env --watch local-server.mjs",
+    "build": "node --check netlify/functions/api.mjs && node --check netlify/functions/page.mjs && node --check netlify/functions/lib/accounts.mjs && node --check public/app.js && node --check public/features.js",
     "test": "node --test --test-isolation=none"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
-    "pg": "^8.23.1"
-  },
-  "devDependencies": {
+    "pg": "^8.23.1",
     "@electric-sql/pglite": "^0.2.17"
   }
 }

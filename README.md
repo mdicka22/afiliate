@@ -29,8 +29,10 @@ npm test
 
 ## Data lokal dan deploy
 
-Pratinjau lokal memakai SQLite di `data/affilink.sqlite` dan menyimpan gambar di `uploads/`. Atur `PORT` bila perlu. `AFFILINK_DATA_DIR` dan `AFFILINK_UPLOAD_DIR` dapat dipakai untuk memindahkan lokasi penyimpanan lokal.
+Pratinjau lokal memakai PostgreSQL lokal (PGlite) di `data/postgres` dengan API yang sama dengan Netlify. Gambar lokal tersimpan di `uploads/`. Database SQLite lama di `data/affilink.sqlite` disalin otomatis saat database PostgreSQL lokal baru dibuat; berkas asli tetap ada. Atur `PORT` bila perlu. `AFFILINK_DATA_DIR` dan `AFFILINK_UPLOAD_DIR` dapat dipakai untuk memindahkan lokasi penyimpanan lokal. File `server.js` lama dipertahankan untuk kompatibilitas dan pengujian migrasi dasar.
 
 Versi deploy memakai PostgreSQL Supabase untuk data, Supabase Storage untuk gambar, dan Netlify Functions untuk API. Ikuti [DEPLOY-NETLIFY.md](DEPLOY-NETLIFY.md). Database online baru dimulai kosong; data SQLite lokal tidak ikut terunggah.
+
+Pengaturan paket Rp50.000, Midtrans, email pemulihan, admin, dan sertifikat database tersedia di [COMMERCIAL-SETUP.md](COMMERCIAL-SETUP.md). Salin `.env.example` menjadi `.env` untuk konfigurasi lokal. Tanpa `SUPABASE_DB_URL`, pengujian lokal memakai PGlite. Pembayaran tetap nonaktif sampai `BILLING_ENABLED=true` dan durasi paket serta Server Key tersedia.
 
 Alamat `affalink.web` dalam PRD adalah contoh. Domain sebenarnya perlu dimiliki dan diarahkan ke hosting sebelum halaman publik dapat diakses dari internet.

@@ -3,9 +3,17 @@
   publish = "public"
   functions = "netlify/functions"
 
+[functions]
+  included_files = ["supabase/upgrade.sql", "public/index.html"]
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/:slug"
+  to = "/.netlify/functions/page?slug=:slug"
   status = 200
 
 [[redirects]]
