@@ -5,9 +5,24 @@ import categories from '../../categories.json' with { type: 'json' };
 let livePool;
 const limits = new Map();
 const reserved = new Set(['app','auth','login','register','api','uploads','assets','favicon.ico','demo','admin','www']);
+export const databasePoolConfig = (connectionString, caCertificate = '') => {
+  const url = new URL(connectionString);
+  if (!['postgres:', 'postgresql:'].includes(url.protocol)) throw new Error('SUPABASE_DB_URL harus berupa URL PostgreSQL.');
+  // node-postgres lets sslmode in the URL override the ssl object below.
+  for (const key of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey']) url.searchParams.delete(key);
+  const ca = caCertificate.trim().replace(/\\n/g, '\n');
+  if (ca && !/^-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----\s*$/.test(ca)) throw new Error('SUPABASE_DB_CA bukan sertifikat PEM yang valid.');
+  return {
+    connectionString: url.toString(),
+    max: 1,
+    ssl: ca ? { ca, rejectUnauthorized: true } : { rejectUnauthorized: false },
+    connectionTimeoutMillis: 8000,
+    idleTimeoutMillis: 10000,
+  };
+};
 const getPool = () => {
   if (!process.env.SUPABASE_DB_URL) throw new Error('SUPABASE_DB_URL belum diatur.');
-  return livePool ||= new pg.Pool({ connectionString: process.env.SUPABASE_DB_URL, max: 1, ssl: { rejectUnauthorized: true }, connectionTimeoutMillis: 8000, idleTimeoutMillis: 10000 });
+  return livePool ||= new pg.Pool(databasePoolConfig(process.env.SUPABASE_DB_URL, process.env.SUPABASE_DB_CA));
 };
 const uploadToSupabase = async (name, bytes, contentType) => {
   const baseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '');
