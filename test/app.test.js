@@ -44,6 +44,12 @@ test('multi-user auth, unique slugs, catalog, events, and ownership', async t =>
   const themed = await call('/api/profile','PUT',{slug:'dila',displayName:'Pilihan Dila',theme:'blush'},first.cookie);
   assert.equal(themed.status,200);
   assert.equal((await call('/api/public/dila')).data.user.theme,'blush');
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==';
+  const avatar = await call('/api/upload','POST',{data:png},first.cookie);
+  assert.equal(avatar.status,201);
+  const profileWithAvatar = await call('/api/profile','PUT',{slug:'dila',displayName:'Pilihan Dila',theme:'blush',avatarUrl:avatar.data.url},first.cookie);
+  assert.equal(profileWithAvatar.status,200);
+  assert.equal((await call('/api/public/dila')).data.user.avatarUrl,avatar.data.url);
   assert.equal((await call('/api/profile','PUT',{slug:'dila',displayName:'Pilihan Dila',theme:'invalid'},first.cookie)).status,400);
   assert.equal((await call('/api/profile','PUT',{slug:'bima',displayName:'Dila'},first.cookie)).status,409);
   assert.equal((await call('/api/logout','POST',{},first.cookie)).status,200);

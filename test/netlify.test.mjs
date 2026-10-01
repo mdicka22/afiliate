@@ -62,6 +62,9 @@ test('Netlify API works against Supabase PostgreSQL schema', async () => {
   assert.equal(upload.status,201);
   assert.match(upload.data.url,/^https:\/\/supabase\.example\/storage\/v1\/object\/public\/product-images\//);
   assert.ok(savedImages.has(upload.data.url.split('/').pop()));
+  const profileWithAvatar = await call('/api/profile','PUT',{slug:'dila',displayName:'Pilihan Dila',theme:'studio',avatarUrl:upload.data.url},a.cookie);
+  assert.equal(profileWithAvatar.status,200);
+  assert.equal((await call('/api/public/dila')).data.user.avatarUrl,upload.data.url);
   assert.equal((await call('/api/logout','POST',{},a.cookie)).status,200);
   assert.equal((await call('/api/dashboard','GET',undefined,a.cookie)).status,401);
   await db.close();
