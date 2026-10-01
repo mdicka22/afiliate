@@ -122,3 +122,36 @@ test('share metadata escapes profile fields without executable markup',()=>{
   const html=withMetadata('<head><title>Old</title><meta name="description" content="Old"></head>',{display_name:'<script>alert(1)</script>',bio:'" onload="bad',slug:'tester',avatar_url:'javascript:alert(1)'},'https://affalink.example');
   assert.ok(!html.includes('<script>'));assert.ok(html.includes('&lt;script&gt;'));assert.ok(html.includes('og:url'));assert.ok(!html.includes('javascript:'));assert.ok(html.includes('/assets/affalink-3d.png'));
 });
+
+test('admin filters, pagination, access grants, suspension and audit preserve boundaries',async()=>{
+  const env={};const f=await setup({env});
+  try {
+    const owner=await f.register('owner'),target=await f.register('member');env.ADMIN_USERNAMES='owner';
+    const endpoint=`/api/admin/users/${target.data.user.id}`;
+    assert.equal((await f.call(`${endpoint}/access`,'PUT',{days:30,reason:'Kompensasi layanan'},target.cookie)).status,403);
+    assert.equal((await f.call(`${endpoint}/access`,'PUT',{days:0,reason:'Kompensasi layanan'},owner.cookie)).status,400);
+    assert.equal((await f.call(`${endpoint}/access`,'PUT',{days:30,reason:'a'},owner.cookie)).status,400);
+    assert.equal((await f.call(`${endpoint}/access`,'PUT',{days:30,reason:'Kompensasi layanan'},owner.cookie)).status,200);
+    assert.ok((await f.call('/api/account','GET',undefined,target.cookie)).data.activeUntil);
+    const product=await f.call('/api/products','POST',{title:'Pilihan member',category:'Beauty & Personal Care',subcategory:'Skincare',affiliateUrl:'https://example.com'},target.cookie);
+    assert.equal(product.status,201);
+    assert.equal((await f.call(`${endpoint}/suspension`,'PUT',{suspended:true,reason:'Peninjauan penyalahgunaan'},owner.cookie)).status,200);
+    assert.equal((await f.call('/api/me','GET',undefined,target.cookie)).data.user,null);
+    assert.equal((await f.call('/api/public/member')).status,404);
+    assert.equal((await f.call(`/api/public/member/products/${product.data.id}/click`,'POST',{})).status,404);
+    assert.equal((await f.call('/api/login','POST',{username:'member',password:'password123'})).status,403);
+    const suspended=await f.call('/api/admin?status=suspended','GET',undefined,owner.cookie);
+    assert.equal(suspended.data.users.length,1);assert.equal(suspended.data.users[0].username,'member');
+    assert.equal((await f.call(`/api/admin/users/${owner.data.user.id}/suspension`,'PUT',{suspended:true,reason:'Uji perlindungan admin'},owner.cookie)).status,400);
+    assert.equal((await f.call(`${endpoint}/suspension`,'PUT',{suspended:false,reason:'Peninjauan selesai'},owner.cookie)).status,200);
+    const relogin=await f.call('/api/login','POST',{username:'member',password:'password123'});assert.equal(relogin.status,200);
+    assert.equal((await f.call('/api/public/member')).data.products.length,1);
+    const board=await f.call('/api/admin?q=member&status=active','GET',undefined,owner.cookie);
+    assert.equal(board.data.pagination.total,1);assert.equal(Number(board.data.summary.revenue),0);
+    assert.equal(board.data.audit.length,3);assert.equal(board.data.audit[0].reason,'Peninjauan selesai');
+    assert.equal(board.data.health.email,false);assert.ok(!JSON.stringify(board.data).includes('password_hash'));
+    await f.pool.query("INSERT INTO users(username,password_hash,slug,display_name) SELECT 'person'||g,u.password_hash,'person'||g,'Person '||g FROM generate_series(1,23) g CROSS JOIN users u WHERE u.username='owner'");
+    const page1=await f.call('/api/admin','GET',undefined,owner.cookie),page2=await f.call('/api/admin?page=2','GET',undefined,owner.cookie);
+    assert.equal(page1.data.users.length,20);assert.equal(page2.data.users.length,5);assert.equal(page2.data.pagination.pages,2);
+  }finally{await f.db.close();}
+});

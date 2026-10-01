@@ -24,18 +24,13 @@ function appendAccountSettings(target) {
 }
 async function renderBilling(target) {
   const a=state.account || {}, c=state.config;
-  target.innerHTML=`<section class="panel billing-panel"><span class="kicker">PAKET AFFALINK</span><h2>${c.billing ? `Rp${fmt(c.price)}` : 'Paket sedang disiapkan.'}</h2><p>${c.billing ? `Akses selama ${c.days || '—'} hari. Pembayaran satu kali, tanpa perpanjangan otomatis.` : 'Pengelola belum membuka pembayaran. Kamu masih dapat menggunakan akun seperti biasa.'}</p><div class="access-status"><strong>${a.access ? 'Akun aktif' : 'Aktivasi diperlukan'}</strong><span>${a.activeUntil ? `Berlaku sampai ${date(a.activeUntil)} (WIB)` : c.billing ? 'Halaman publik dan pengelolaan produk aktif setelah pembayaran berhasil.' : 'Belum ada tanggal masa aktif.'}</span></div>${c.billing ? `<div class="billing-actions"><button data-checkout class="button button-dark" ${!c.paymentReady ? 'disabled' : ''}>${a.access ? 'Perpanjang paket' : 'Bayar & aktifkan'} ${icon('arrow',17)}</button><button data-refresh-payment class="button button-outline">Cek pembayaran</button></div>${!c.paymentReady ? '<p class="hint">Pembayaran sedang disiapkan pengelola.</p>' : ''}` : ''}${c.supportEmail ? `<p>Butuh bantuan? <a href="mailto:${esc(c.supportEmail)}">${esc(c.supportEmail)}</a></p>` : ''}</section><section class="panel"><h2>Riwayat pembayaran</h2><div id="payment-history"><p>Memuat riwayat...</p></div></section>`;
+  target.innerHTML=`<section class="panel billing-panel"><span class="kicker">PAKET AFFALINK</span><h2>${c.billing ? `Rp${fmt(c.price)}` : 'Paket sedang disiapkan.'}</h2><p>${c.billing ? `Akses selama ${c.days || '—'} hari. Pembayaran satu kali, tanpa perpanjangan otomatis.` : 'Pengelola belum membuka pembayaran. Kamu masih dapat menggunakan akun seperti biasa.'}</p><div class="access-status"><strong>${a.suspended ? 'Akun ditangguhkan' : a.access ? 'Akun aktif' : 'Aktivasi diperlukan'}</strong><span>${a.suspended ? 'Hubungi pengelola untuk memulihkan akses akun.' : a.activeUntil ? `Berlaku sampai ${date(a.activeUntil)} (WIB)` : c.billing ? 'Halaman publik dan pengelolaan produk aktif setelah pembayaran berhasil.' : 'Belum ada tanggal masa aktif.'}</span></div>${c.billing ? `<div class="billing-actions"><button data-checkout class="button button-dark" ${!c.paymentReady || a.suspended ? 'disabled' : ''}>${a.access ? 'Perpanjang paket' : 'Bayar & aktifkan'} ${icon('arrow',17)}</button><button data-refresh-payment class="button button-outline">Cek pembayaran</button></div>${!c.paymentReady ? '<p class="hint">Pembayaran sedang disiapkan pengelola.</p>' : ''}` : ''}${c.supportEmail ? `<p>Butuh bantuan? <a href="mailto:${esc(c.supportEmail)}">${esc(c.supportEmail)}</a></p>` : ''}</section><section class="panel"><h2>Riwayat pembayaran</h2><div id="payment-history"><p>Memuat riwayat...</p></div></section>`;
   try { const {orders}=await api('/api/billing'); const node=$('#payment-history',target); if(!node || !target.isConnected) return;
     const labels={created:'Disiapkan',pending:'Menunggu pembayaran',paid:'Berhasil',deny:'Ditolak',cancel:'Dibatalkan',expire:'Kedaluwarsa',failure:'Gagal'};
-    node.innerHTML=orders.length ? orders.map(o=>`<div class="payment-row"><div><strong>Rp${fmt(o.amount)} · ${o.duration_days} hari</strong><small>${date(o.created_at)} · ${esc(o.id)}</small></div><span>${labels[o.status] || esc(o.status)}</span>${['created','pending'].includes(o.status) && o.checkout_url ? `<a class="button button-outline button-sm" href="${esc(o.checkout_url)}">Lanjut bayar</a>` : ''}</div>`).join('') : '<p>Belum ada pembayaran.</p>';
+    node.innerHTML=orders.length ? orders.map(o=>`<div class="payment-row"><div><strong>Rp${fmt(o.amount)} · ${o.duration_days} hari</strong><small>${date(o.created_at)} · ${esc(o.id)}</small></div><span>${labels[o.status] || esc(o.status)}</span>${!a.suspended && ['created','pending'].includes(o.status) && o.checkout_url ? `<a class="button button-outline button-sm" href="${esc(o.checkout_url)}">Lanjut bayar</a>` : ''}</div>`).join('') : '<p>Belum ada pembayaran.</p>';
   } catch(error) { if(target.isConnected) $('#payment-history',target).textContent=error.message; }
 }
-async function renderAdmin(target) {
-  target.innerHTML='<section class="panel"><h2>Memuat data admin...</h2></section>';
-  try {const d=await api('/api/admin'); if(!target.isConnected || state.view!=='admin')return;
-    target.innerHTML=`<section class="panel"><h2>Pengguna (${d.users.length})</h2><p>Menampilkan maksimal 200 akun terbaru.</p><div class="admin-list">${d.users.map(u=>`<div class="admin-row"><div><strong>${esc(u.display_name)}</strong><small>@${esc(u.username)} · /${esc(u.slug)}</small></div><span>${u.products} produk · ${(Number(u.storage_bytes)/1024/1024).toFixed(1)} MB</span><span>${u.active_until ? `Aktif sampai ${date(u.active_until)}` : 'Belum ada masa aktif'}</span></div>`).join('')}</div></section><section class="panel"><h2>Pembayaran terbaru</h2>${d.orders.length ? d.orders.map(o=>`<div class="payment-row"><div><strong>@${esc(o.username)} · Rp${fmt(o.amount)}</strong><small>${date(o.created_at)}</small></div><span>${esc(o.status)}</span></div>`).join('') : '<p>Belum ada transaksi.</p>'}</section>`;
-  } catch(error) {target.innerHTML=emptyState('Data belum tersedia',error.message);}
-}
+async function renderAdmin(target) { return renderAdminBoard(target); }
 async function uploadOptimized(input) {
   const file=input.files[0], avatar=input.id==='avatar-upload';
   if(!['image/png','image/jpeg','image/webp','image/gif'].includes(file.type) || file.size>15*1024*1024) { input.value=''; return toast('Pilih gambar JPG, PNG, WebP, atau GIF maksimal 15 MB.'); }
@@ -47,7 +42,7 @@ async function uploadOptimized(input) {
     bitmap=await createImageBitmap(file);
     if(bitmap.width*bitmap.height>50000000) throw Error('Resolusi gambar terlalu besar.');
     const canvas=document.createElement('canvas'), context=canvas.getContext('2d');
-    if(avatar) {const size=Math.min(bitmap.width,bitmap.height);canvas.width=canvas.height=400;context.drawImage(bitmap,(bitmap.width-size)/2,(bitmap.height-size)/2,size,size,0,0,400,400);}
+    if(avatar) {const crop=await chooseAvatarCrop(bitmap);if(!crop){$('#avatar-status').textContent='Foto belum diubah.';return;}canvas.width=canvas.height=400;context.drawImage(bitmap,crop.x,crop.y,crop.size,crop.size,0,0,400,400);}
     else {const ratio=Math.min(1,1000/Math.max(bitmap.width,bitmap.height));canvas.width=Math.max(1,Math.round(bitmap.width*ratio));canvas.height=Math.max(1,Math.round(bitmap.height*ratio));context.drawImage(bitmap,0,0,canvas.width,canvas.height);}
     let data=canvas.toDataURL('image/webp',.82);
     if(data.length>2700000) data=canvas.toDataURL('image/jpeg',.65);
@@ -55,7 +50,7 @@ async function uploadOptimized(input) {
     const r=await api('/api/upload',{method:'POST',body:JSON.stringify({data})});
     if(!form.isConnected) return;
     form.elements[avatar ? 'avatarUrl' : 'imageUrl'].value=r.url;
-    if(avatar) { const preview=image(r.url,state.dashboard.user.displayName,'avatar-image');$('#profile-avatar-preview').innerHTML=preview; const aside=$('.profile-preview .profile-avatar');if(aside)aside.innerHTML=preview;$('#avatar-status').textContent='Foto dipotong persegi dari tengah. Klik Simpan perubahan.'; }
+    if(avatar) { const preview=image(r.url,state.dashboard.user.displayName,'avatar-image');$('#profile-avatar-preview').innerHTML=preview; const aside=$('.profile-preview .profile-avatar');if(aside)aside.innerHTML=preview;$('#avatar-status').textContent='Foto siap. Klik Simpan perubahan.'; }
     else $('#product-image-preview').innerHTML=image(r.url,'Pratinjau produk');
     toast('Gambar diperkecil dan berhasil diunggah.');
   } catch(error) {toast(error.message || 'Gambar tidak bisa diproses.');if(avatar && form.isConnected)$('#avatar-status').textContent='Foto belum berhasil diunggah.';}

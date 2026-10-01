@@ -151,6 +151,7 @@ export function createHandler({ pool, uploadImage = uploadToSupabase, env = proc
         const body = await readBody(request), username = clean(body.username,32).toLowerCase();
         const user = await one('SELECT * FROM users WHERE username=$1',[username]);
         if (!passwordOk(String(body.password || ''),user?.password_hash || dummyPasswordHash) || !user) fail(401,'Username atau password salah.');
+        if(user.suspended) fail(403,'Akun sedang ditangguhkan. Hubungi pengelola.');
         return json({ user:userView(user) },200,{ 'Set-Cookie':await makeSession(user.id,url.protocol==='https:') });
       }
       if (route === '/api/logout' && method === 'POST') {
@@ -191,7 +192,7 @@ export function createHandler({ pool, uploadImage = uploadToSupabase, env = proc
       const track = route.match(/^\/api\/public\/([a-z0-9-]+)\/products\/(\d+)\/(click|copy|share)$/);
       if (track && method === 'POST') {
         if (!await rate(request,`event:${track[2]}`,30,60000)) fail(429,'Terlalu banyak permintaan.');
-        const product = await one('SELECT p.id,p.user_id,u.username,u.active_until FROM products p JOIN users u ON u.id=p.user_id WHERE p.id=$1 AND u.slug=$2 AND p.visible=TRUE',[Number(track[2]),track[1]]);
+        const product = await one('SELECT p.id,p.user_id,u.username,u.active_until,u.suspended FROM products p JOIN users u ON u.id=p.user_id WHERE p.id=$1 AND u.slug=$2 AND p.visible=TRUE',[Number(track[2]),track[1]]);
         if (!product || !hasAccess(product,env)) fail(404,'Produk tidak ditemukan.');
         await addEvent(product.user_id,product.id,track[3],request); return json({ ok:true });
       }

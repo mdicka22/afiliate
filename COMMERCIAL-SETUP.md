@@ -42,7 +42,21 @@ Ini tindakan admin, bukan bukti pembayaran. Jangan jalankan untuk semua pengguna
 
 Setelah Sandbox berhasil dan akun merchant Midtrans siap Production, ganti Server Key dengan key Production, set `MIDTRANS_PRODUCTION=true`, atur Payment Notification URL di dashboard Production, lalu deploy ulang. Pastikan durasi paket dan email bantuan benar. Pembayaran berupa transaksi satu kali; tidak ada auto debit atau perpanjangan otomatis.
 
-Untuk saat ini refund harus ditangani oleh pengelola di Midtrans dan masa aktif akun ditinjau lewat database. Pembatalan/refund setelah status sukses belum otomatis mencabut akses. Laporan admin menampilkan maksimal 200 akun dan 100 transaksi terbaru.
+Untuk saat ini refund harus ditangani oleh pengelola di Midtrans dan masa aktif akun ditinjau oleh admin. Pembatalan/refund setelah status sukses belum otomatis mencabut akses.
+
+## Panel admin (poin 8)
+
+Setelah `ADMIN_USERNAMES` berisi username akun yang sudah ada, menu **Admin** muncul. Panel ini menyediakan:
+
+- Ringkasan pengguna, paket aktif, total pembayaran berhasil, dan ukuran unggahan yang tercatat.
+- Status konfigurasi Midtrans, email, Storage, dan sertifikat TLS. Indikator menunjukkan konfigurasi tersedia, bukan tes koneksi langsung.
+- Pencarian pengguna atau ID pesanan; filter akun aktif, berakhir, tanpa masa aktif, dan ditangguhkan; filter status pembayaran.
+- Daftar pengguna dan pembayaran dengan 20 baris per halaman, sehingga akun lama tetap dapat ditemukan.
+- Tambah masa aktif manual 1–3650 hari dengan alasan wajib. Tindakan ini tidak membuat catatan pembayaran palsu.
+- Tangguhkan atau pulihkan akun tanpa menghapus produknya. Penangguhan mengeluarkan semua sesi, menolak login/checkout, dan menonaktifkan halaman publik. Akun admin tidak dapat ditangguhkan dari panel.
+- Riwayat 20 tindakan admin terakhir, berisi pelaku, pengguna sasaran, alasan, dan perubahan sebelum/sesudah.
+
+Data Storage hanya mencakup unggahan setelah fitur pencatatan aktif. File yang sudah ada sebelum upgrade dan file tidak terpakai belum otomatis dihapus. Jika ingin meninjau pembayaran refund, gunakan dashboard Midtrans sebagai sumber status keuangannya.
 
 ## 4. Email pemulihan
 
@@ -63,7 +77,7 @@ Koneksi lama tetap terenkripsi, tetapi tanpa CA belum memverifikasi sertifikat. 
 - Tab Semua tetap rekomendasi kecil + 10 produk terbaru dalam slide horizontal. Lihat semua dan pencarian mengambil enam produk per halaman dari database.
 - Produk yang disembunyikan tidak keluar di pencarian, koleksi publik, atau tracking produk. Duplikat dibuat tersembunyi agar bisa diedit dahulu.
 - Statistik 7/30 hari mencakup pengunjung unik berbasis cookie, share halaman, dan produk teratas untuk periode tersebut. Data lama tanpa identitas cookie tidak dapat dihitung ulang sebagai pengunjung unik. Statistik harian menggunakan WIB; klik bukan penjualan atau komisi.
-- Gambar input maksimal 15 MB diperkecil menjadi WebP sebelum unggah; server tetap membatasi setiap gambar menjadi 2 MB. Foto profil dipotong persegi dari tengah. GIF menjadi gambar diam. Batas kumulatif unggahan baru per akun 100 MB; ini menghitung semua file yang pernah diunggah sejak upgrade, termasuk yang belum digunakan. Penghapusan file Storage lama belum otomatis.
+- Gambar input maksimal 15 MB diperkecil menjadi WebP sebelum unggah; server tetap membatasi setiap gambar menjadi 2 MB. Foto profil dapat diatur zoom serta posisi horizontal/vertikal sebelum dipotong. Membatalkan dialog tidak mengunggah foto. GIF menjadi gambar diam. Batas kumulatif unggahan baru per akun 100 MB; ini menghitung semua file yang pernah diunggah sejak upgrade, termasuk yang belum digunakan. Penghapusan file Storage lama belum otomatis.
 - Pratinjau link memiliki judul, bio, dan foto profil melalui HTML dari server. Aplikasi chat dapat menyimpan pratinjau dalam cache sehingga perubahan tidak selalu muncul langsung.
 
 Referensi integrasi: [Midtrans Snap](https://docs.midtrans.com/docs/snap-snap-integration-guide), [notifikasi Midtrans](https://docs.midtrans.com/docs/https-notification-webhooks), [Resend email API](https://resend.com/docs/api-reference/emails/send-email), [Supabase SSL](https://supabase.com/docs/guides/platform/ssl-enforcement).

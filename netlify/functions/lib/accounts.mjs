@@ -16,7 +16,7 @@ export const paymentSettings = (env = process.env) => {
   return { enabled:env.BILLING_ENABLED === 'true', price:50000, days:Number.isInteger(days) && days > 0 && days <= 3650 ? days : 0, production:env.MIDTRANS_PRODUCTION === 'true' };
 };
 export const isAdmin = (user, env = process.env) => !!user && (env.ADMIN_USERNAMES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean).includes(user.username);
-export const hasAccess = (user, env = process.env) => !paymentSettings(env).enabled || isAdmin(user,env) || new Date(user.active_until).getTime() > Date.now();
+export const hasAccess = (user, env = process.env) => !user.suspended && (!paymentSettings(env).enabled || isAdmin(user,env) || new Date(user.active_until).getTime() > Date.now());
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 export function durableRate(pool) {
   return async (request, key, count, interval) => {
@@ -126,7 +126,7 @@ export function accountRoutes({ pool, env = process.env, fetcher = fetch, curren
     if(!/^\/api\/(account|billing|admin)(\/|$)/.test(route)) return null;
     const user=await requireUser(request);
     const full=await one('SELECT * FROM users WHERE id=$1',[user.id]);
-    if(route === '/api/account' && method==='GET') return json({email:full.email || '',emailVerified:!!full.email_verified_at,emailReady:mailReady(),activeUntil:full.active_until,access:hasAccess(full,env),admin:isAdmin(full,env)});
+    if(route === '/api/account' && method==='GET') return json({email:full.email || '',emailVerified:!!full.email_verified_at,emailReady:mailReady(),activeUntil:full.active_until,access:hasAccess(full,env),suspended:full.suspended,admin:isAdmin(full,env)});
     if(route === '/api/account/email' && method==='POST') {
       if(!mailReady()) fail(503,'Email pemulihan belum disiapkan.');
       if(!await rate(request,`verify:${user.id}`,3,3600000)) fail(429,'Coba lagi nanti.');
@@ -149,6 +149,7 @@ export function accountRoutes({ pool, env = process.env, fetcher = fetch, curren
     }
     if(route === '/api/billing' && method==='GET') return json({orders:(await pool.query('SELECT id,amount,duration_days,status,checkout_url,paid_at,created_at FROM payment_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20',[user.id])).rows});
     if(route === '/api/billing/checkout' && method==='POST') {
+      if(full.suspended) fail(403,'Akun sedang ditangguhkan. Hubungi pengelola.');
       const cfg=paymentSettings(env);
       if(!cfg.enabled) fail(400,'Paket berbayar belum dibuka.');
       if(!await rate(request,`checkout:${user.id}`,5,3600000)) fail(429,'Terlalu banyak permintaan pembayaran.');
@@ -170,8 +171,40 @@ export function accountRoutes({ pool, env = process.env, fetcher = fetch, curren
       return json({ok:true});
     }
     if(route.startsWith('/api/admin')) {
-      if(!isAdmin(full,env)) fail(403,'Akses admin diperlukan.');
-      if(route==='/api/admin' && method==='GET') return json({users:(await pool.query('SELECT id,username,display_name,slug,active_until,email_verified_at,(SELECT COUNT(*)::int FROM products p WHERE p.user_id=u.id) products,(SELECT COALESCE(SUM(bytes),0)::bigint FROM uploaded_images i WHERE i.user_id=u.id) storage_bytes FROM users u ORDER BY id DESC LIMIT 200')).rows,orders:(await pool.query('SELECT o.id,u.username,o.amount,o.status,o.created_at,o.paid_at FROM payment_orders o JOIN users u ON u.id=o.user_id ORDER BY o.created_at DESC LIMIT 100')).rows});
+      if(!isAdmin(full,env) || full.suspended) fail(403,'Akses admin diperlukan.');
+      const url=new URL(request.url),page=Math.max(1,Number.parseInt(url.searchParams.get('page'),10)||1),orderPage=Math.max(1,Number.parseInt(url.searchParams.get('orderPage'),10)||1),q=String(url.searchParams.get('q') || '').trim().toLowerCase().slice(0,120),filter=url.searchParams.get('status') || 'all',orderStatus=url.searchParams.get('orderStatus') || 'all';
+      if(route==='/api/admin' && method==='GET') {
+        const condition=`($1='' OR STRPOS(LOWER(CONCAT_WS(' ',u.username,u.display_name,u.slug)),$1)>0) AND ($2='all' OR ($2='suspended' AND u.suspended) OR ($2='active' AND NOT u.suspended AND u.active_until>NOW()) OR ($2='expired' AND NOT u.suspended AND u.active_until<=NOW()) OR ($2='unpaid' AND NOT u.suspended AND u.active_until IS NULL))`;
+        const total=(await one(`SELECT COUNT(*)::int n FROM users u WHERE ${condition}`,[q,filter])).n,pages=Math.max(1,Math.ceil(total/20)),current=Math.min(page,pages);
+        const users=(await pool.query(`SELECT id,username,display_name,slug,suspended,active_until,email_verified_at,(SELECT COUNT(*)::int FROM products p WHERE p.user_id=u.id) products,(SELECT COALESCE(SUM(bytes),0)::bigint FROM uploaded_images i WHERE i.user_id=u.id) storage_bytes FROM users u WHERE ${condition} ORDER BY id DESC LIMIT 20 OFFSET $3`,[q,filter,(current-1)*20])).rows;
+        const orderCondition=`($1='all' OR o.status=$1) AND ($2='' OR STRPOS(LOWER(CONCAT_WS(' ',u.username,o.id)),$2)>0)`;
+        const orderTotal=(await one(`SELECT COUNT(*)::int n FROM payment_orders o JOIN users u ON u.id=o.user_id WHERE ${orderCondition}`,[orderStatus,q])).n,orderPages=Math.max(1,Math.ceil(orderTotal/20)),currentOrder=Math.min(orderPage,orderPages);
+        const orders=(await pool.query(`SELECT o.id,u.username,o.amount,o.status,o.created_at,o.paid_at FROM payment_orders o JOIN users u ON u.id=o.user_id WHERE ${orderCondition} ORDER BY o.created_at DESC LIMIT 20 OFFSET $3`,[orderStatus,q,(currentOrder-1)*20])).rows;
+        const summary=await one(`SELECT COUNT(*)::int users,COUNT(*) FILTER(WHERE suspended)::int suspended,COUNT(*) FILTER(WHERE active_until>NOW() AND NOT suspended)::int active,(SELECT COALESCE(SUM(amount),0)::bigint FROM payment_orders WHERE status='paid') revenue,(SELECT COALESCE(SUM(bytes),0)::bigint FROM uploaded_images) storage_bytes FROM users`);
+        const audit=(await pool.query(`SELECT a.action,a.reason,a.details,a.created_at,u.username actor,t.username target FROM admin_audit a JOIN users u ON u.id=a.actor_id JOIN users t ON t.id=a.target_id ORDER BY a.id DESC LIMIT 20`)).rows;
+        return json({users,orders,summary,audit,pagination:{total,page:current,pages,orderTotal,orderPage:currentOrder,orderPages},health:{payments:!!env.MIDTRANS_SERVER_KEY && !!paymentSettings(env).days,email:mailReady(),verifiedTls:!!env.SUPABASE_DB_CA,storage:!!(env.SUPABASE_URL && env.SUPABASE_SECRET_KEY),billing:paymentSettings(env).enabled,production:paymentSettings(env).production}});
+      }
+      const action=route.match(/^\/api\/admin\/users\/(\d+)\/(access|suspension)$/);
+      if(action && method==='PUT') {
+        if(!await rate(request,`admin:${user.id}`,30,60000)) fail(429,'Terlalu banyak tindakan admin.');
+        const body=await readBody(request),reason=String(body.reason || '').trim().slice(0,280),id=Number(action[1]);
+        if(reason.length<5) fail(400,'Tuliskan alasan perubahan, minimal 5 karakter.');
+        if(action[2]==='access' && (!Number.isInteger(body.days) || body.days<1 || body.days>3650)) fail(400,'Masa aktif harus 1–3650 hari.');
+        if(action[2]==='suspension' && typeof body.suspended!=='boolean') fail(400,'Status akun tidak valid.');
+        const client=await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const target=(await client.query('SELECT * FROM users WHERE id=$1 FOR UPDATE',[id])).rows[0];
+          if(!target) fail(404,'Pengguna tidak ditemukan.');
+          if(action[2]==='suspension' && (target.id===full.id || isAdmin(target,env))) fail(400,'Akun admin tidak dapat ditangguhkan dari panel ini.');
+          const before=action[2]==='access' ? target.active_until : target.suspended;
+          const changed=action[2]==='access' ? (await client.query("UPDATE users SET active_until=GREATEST(COALESCE(active_until,NOW()),NOW()) + ($1 * INTERVAL '1 day') WHERE id=$2 RETURNING active_until",[body.days,id])).rows[0].active_until : body.suspended;
+          if(action[2]==='suspension') {await client.query('UPDATE users SET suspended=$1 WHERE id=$2',[body.suspended,id]);if(body.suspended) await client.query('DELETE FROM sessions WHERE user_id=$1',[id]);}
+          await client.query('INSERT INTO admin_audit(actor_id,target_id,action,reason,details) VALUES($1,$2,$3,$4,$5::jsonb)',[full.id,id,action[2],reason,JSON.stringify({before,after:changed,...(action[2]==='access' ? {days:body.days} : {})})]);
+          await client.query('COMMIT');
+        }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+        return json({ok:true});
+      }
     }
     fail(404,'Alamat API tidak ditemukan.');
   };

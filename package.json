@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env local-server.mjs",
     "dev": "node --env-file-if-exists=.env --watch local-server.mjs",
-    "build": "node --check netlify/functions/api.mjs && node --check netlify/functions/page.mjs && node --check netlify/functions/lib/accounts.mjs && node --check public/app.js && node --check public/features.js",
+    "build": "node --check netlify/functions/api.mjs && node --check netlify/functions/page.mjs && node --check netlify/functions/lib/accounts.mjs && node --check public/app.js && node --check public/features.js && node --check public/admin.js && node --check public/crop.js",
     "test": "node --test --test-isolation=none"
   },
   "engines": {
